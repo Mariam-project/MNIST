@@ -92,6 +92,176 @@ void calcul_couche_sortie(float Xh[HIDDEN_SIZE],
     }
 }
 
+// ---------------------------------------------------------------------------
+// 5. Calcul du delta de la couche de sortie
+// delta_i = f'(poti) * (Yd_i - Xi)
+// avec f'(x) = f(x)*(1 - f(x)) car f = sigmoïde
+// ---------------------------------------------------------------------------
+void calcul_delta_sortie(float X_out[OUTPUT_SIZE],  // sorties Xi après sigmoïde
+                         int Yd[OUTPUT_SIZE],       // vecteur one-hot
+                         float delta_out[OUTPUT_SIZE])
+{
+    for (int i = 0; i < OUTPUT_SIZE; i++) {
+        float Xi = X_out[i];              // sortie du neurone i
+        float fprime = Xi * (1 - Xi);     // f'(poti)
+        delta_out[i] = fprime * (Yd[i] - Xi);
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// 6. Calcul du delta de la couche cachée
+// delta_h = f'(poth) * Σ_i (delta_i * W2[i][h])
+// où f'(x) = Xh * (1 - Xh) car Xh = f(poth)
+// ---------------------------------------------------------------------------
+void calcul_delta_cachee(float X_hidden[HIDDEN_SIZE],     // sorties Xh
+                         float delta_out[OUTPUT_SIZE],     // deltas couche sortie
+                         float W2[OUTPUT_SIZE][HIDDEN_SIZE], // poids sortie
+                         float delta_hidden[HIDDEN_SIZE])
+{
+    for (int h = 0; h < HIDDEN_SIZE; h++) {
+
+        // 1) calcul du terme Σ_i (delta_i * W2[i][h])
+        float somme = 0.0f;
+        for (int i = 0; i < OUTPUT_SIZE; i++) {
+            somme += delta_out[i] * W2[i][h];
+        }
+
+        // 2) f'(poth) = Xh * (1 - Xh)
+        float Xh = X_hidden[h];
+        float fprime = Xh * (1 - Xh);
+
+        // 3) delta final
+        delta_hidden[h] = fprime * somme;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mise à jour des poids W1[h][j] (INPUT → HIDDEN)
+// W1[h][j] += learning_rate * delta_hidden[h] * X[j]
+// ---------------------------------------------------------------------------
+void maj_poids_W1(float W1[HIDDEN_SIZE][INPUT_SIZE],
+                  float delta_hidden[HIDDEN_SIZE],
+                  float X[INPUT_SIZE],
+                  float learning_rate)
+{
+    for (int h = 0; h < HIDDEN_SIZE; h++) {
+        for (int j = 0; j < INPUT_SIZE; j++) {
+            W1[h][j] += learning_rate * delta_hidden[h] * X[j];
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mise à jour des poids W2[i][h] (HIDDEN → OUTPUT)
+// W2[i][h] += learning_rate * delta_out[i] * X_hidden[h]
+// ---------------------------------------------------------------------------
+void maj_poids_W2(float W2[OUTPUT_SIZE][HIDDEN_SIZE],
+                  float delta_out[OUTPUT_SIZE],
+                  float X_hidden[HIDDEN_SIZE],
+                  float learning_rate)
+{
+    for (int i = 0; i < OUTPUT_SIZE; i++) {
+        for (int h = 0; h < HIDDEN_SIZE; h++) {
+            W2[i][h] += learning_rate * delta_out[i] * X_hidden[h];
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Calcul de l'erreur sur p images tirées au hasard
+// Err = (1/p) * Σ_p Σ_i |delta_i|
+// ---------------------------------------------------------------------------
+float calcul_erreur(float W1[HIDDEN_SIZE][INPUT_SIZE],
+                    float W2[OUTPUT_SIZE][HIDDEN_SIZE],
+                    int p)
+{
+    float erreur_totale = 0.0f;
+
+    for (int k = 0; k < p; k++) {
+
+        image img;
+        int Yd[10];
+        float X[INPUT_SIZE];
+        float Xh[HIDDEN_SIZE];
+        float Xout[OUTPUT_SIZE];
+        float deltaO[OUTPUT_SIZE];
+
+        // 1) sélectionner une image
+        get_random_training_image(&img, Yd);
+
+        // 2) normaliser
+        propager_sur_retine(&img, X);
+
+        // 3) propagation avant
+        calcul_couche_cachee(X, W1, Xh);
+        calcul_couche_sortie(Xh, W2, Xout);
+
+        // 4) calcul delta sortie
+        calcul_delta_sortie(Xout, Yd, deltaO);
+
+        // 5) ajouter |delta|
+        for (int i = 0; i < OUTPUT_SIZE; i++)
+            erreur_totale += fabs(deltaO[i]);
+    }
+
+    return erreur_totale / p;
+}
+// ------- TESTER LA PERFORMANCE DU RÉSEAU SUR LA BASE DE TEST -----
+int prediction(float Xout[OUTPUT_SIZE]) {
+    int maxi = 0;
+    float maxv = Xout[0];
+
+    for (int i = 1; i < OUTPUT_SIZE; i++) {
+        if (Xout[i] > maxv) {
+            maxv = Xout[i];
+            maxi = i;
+        }
+    }
+    return maxi;
+}
+
+//--------------- fonction de test ----------
+
+float tester_reseau(float W1[HIDDEN_SIZE][INPUT_SIZE],
+                    float W2[OUTPUT_SIZE][HIDDEN_SIZE])
+{
+    open_test_files();
+
+    int correct = 0;
+    image img;
+    float X[INPUT_SIZE];
+    float Xh[HIDDEN_SIZE];
+    float Xout[OUTPUT_SIZE];
+
+    for (int k = 0; k < 10000; k++) {
+
+        // 1. Lire l’image de test n°k
+        read_test_image(k, &img);
+
+        // 2. Normaliser
+        propager_sur_retine(&img, X);
+
+        // 3. Propagation avant
+        calcul_couche_cachee(X, W1, Xh);
+        calcul_couche_sortie(Xh, W2, Xout);
+
+        // 4. Prédiction
+        int pred = prediction(Xout);
+
+        // 5. Comparaison
+        if (pred == img.label)
+            correct++;
+    }
+
+    close_test_files();
+
+    return (correct / 10000.0f) * 100.0f; // pourcentage
+}
+
+
+
+
 
 
 
@@ -102,38 +272,71 @@ int main() {
 
     open_training_files();
 
-    image img;
-    int Yd[10];      // vecteur one-hot
-    float X[784];    // rétine normalisée
-
-    // 1. Charger un motif au hasard + créer Yd
-    get_random_training_image(&img, Yd);
-
-    // 2. Normaliser l'image
-    propager_sur_retine(&img, X);
-    
-    // Déclaration des poids et des couches
+    // --- tableaux principaux ---
     float W1[HIDDEN_SIZE][INPUT_SIZE];
     float W2[OUTPUT_SIZE][HIDDEN_SIZE];
-    float Xh[HIDDEN_SIZE];   // couche cachée
-    float Xi[OUTPUT_SIZE];   // couche de sortie
 
+    float X[INPUT_SIZE];
+    float Xh[HIDDEN_SIZE];
+    float Xout[OUTPUT_SIZE];
+
+    float deltaH[HIDDEN_SIZE];
+    float deltaO[OUTPUT_SIZE];
+
+    int Yd[10];
+    image img;
+
+    // ---- paramètres ----
+    float learning_rate = 0.1;
+    float seuil = 0.01;     // seuil d'erreur global
+    int p = 100;            // nombre d'images pour évaluer l'erreur
+
+    // 0) INITIALISATION
     initialiser_poids(W1, W2);
 
-    // 3. Calcul couche cachée
-    calcul_couche_cachee(X, W1, Xh);
+    // BOUCLE D'APPRENTISSAGE PRINCIPALE
+    while (1) {
 
-    // 4. Calcul couche sortie
-    calcul_couche_sortie(Xh, W2, Xi);
+        // --- 1) Tirer une image ---
+        get_random_training_image(&img, Yd);
 
-    // Affichage des sorties
-    printf("Sortie réseau :\n");
-    for (int i = 0; i < OUTPUT_SIZE; i++)
-        printf("Neurone %d : %f\n", i, Xi[i]);
+        // --- 2) Rétine ---
+        propager_sur_retine(&img, X);
 
+        // --- 3) Propagation avant ---
+        calcul_couche_cachee(X, W1, Xh);
+        calcul_couche_sortie(Xh, W2, Xout);
 
-    // Vérification
-    affiche_img(&img);
+        // --- 4) Delta sortie ---
+        calcul_delta_sortie(Xout, Yd, deltaO);
+
+        // --- 5) Delta cachée ---
+        calcul_delta_cachee(Xh, deltaO, W2, deltaH);
+
+        // --- 6-7) Mise à jour des poids ---
+        maj_poids_W1(W1, deltaH, X, learning_rate);
+        maj_poids_W2(W2, deltaO, Xh, learning_rate);
+
+        // --- 8) Calculer erreur périodiquement ---
+        static int compteur = 0;
+        compteur++;
+        if (compteur % 1000 == 0) {
+            float Err = calcul_erreur(W1, W2, p);
+            printf("Erreur actuelle = %.4f\n", Err);
+
+            if (Err < seuil)
+                break;
+        }
+    }
+
+    printf("Apprentissage terminé !\n");
+    // ---- Après la boucle d’apprentissage ----
+    printf("Test du réseau sur la base de test...\n");
+
+    float performance = tester_reseau(W1, W2);
+
+    printf("Performance finale : %.2f %% de bonnes réponses\n", performance);
+        
 
     close_training_files();
     return 0;
