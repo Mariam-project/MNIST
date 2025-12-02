@@ -8,15 +8,15 @@
 #define HIDDEN_SIZE 100
 #define OUTPUT_SIZE 10
 
-//Fonction qui choisit une fonction aléatoire 
-void motif_aleatoire() {
-    image img; // Initialisation d'une struct image
-    int index = rand() % 59000; // de 0 à 59000
-    read_training_image(index, &img);
+// //Fonction qui choisit un motif aléatoire 
+// void motif_aleatoire() {
+//     image img; // Initialisation d'une struct image
+//     int index = rand() % 59000; // de 0 à 59000
+//     read_training_image(index, &img); // fonction existe déjà
 
-    printf("Motif tiré : %d\n", index);
-    affiche_img(&img);
-}
+//     printf("Motif tiré : %d\n", index);
+//     affiche_img(&img);
+// }
 
 //Fonction pour initialiser les poids 
 void initialiser_poids(float W1[HIDDEN_SIZE][INPUT_SIZE],
@@ -49,7 +49,7 @@ void get_random_training_image(image *img, int Yd[10]) {
 // --- Fonction : normaliser les pixels dans X[784] -----------------------
 void propager_sur_retine(const image *img, float X[784]) {
     for (int j = 0; j < 784; j++) {
-        X[j] = img->imgbuf[j] / 255.0f;
+        X[j] = img->imgbuf[j] / 255.0f; //imgbuf c'est dans la structure 
     }
 }
 
@@ -272,6 +272,22 @@ int main() {
 
     open_training_files();
 
+    // ---- Pour stocker les erreurs ----
+    float erreurs[10000];
+    int nb_points = 0;
+
+    // ---- Lance Gnuplot ----
+    FILE *gp = popen("gnuplot -persistent", "w");
+    fprintf(gp, "set title 'Courbe d apprentissage'\n");
+    fprintf(gp, "set xlabel 'Iteration (x1000)'\n");
+    fprintf(gp, "set ylabel 'Erreur'\n");
+    fprintf(gp, "set grid\n");
+    fflush(gp);
+
+    // Fichier pour stocker les erreurs
+    FILE *ferr = fopen("erreur.dat", "w");
+
+
     // --- tableaux principaux ---
     float W1[HIDDEN_SIZE][INPUT_SIZE];
     float W2[OUTPUT_SIZE][HIDDEN_SIZE];
@@ -324,9 +340,20 @@ int main() {
             float Err = calcul_erreur(W1, W2, p);
             printf("Erreur actuelle = %.4f\n", Err);
 
-            if (Err < seuil)
+            // Sauvegarde
+            erreurs[nb_points] = Err;
+            fprintf(ferr, "%d %.6f\n", nb_points, Err);
+            fflush(ferr);
+            nb_points++;
+
+            // Mise à jour du plot
+            fprintf(gp, "plot 'erreur.dat' with lines lw 2 title 'Erreur'\n");
+            fflush(gp);
+
+        if (Err < seuil)
                 break;
-        }
+}
+
     }
 
     printf("Apprentissage terminé !\n");
@@ -337,6 +364,8 @@ int main() {
 
     printf("Performance finale : %.2f %% de bonnes réponses\n", performance);
         
+    fclose(ferr);
+    pclose(gp);
 
     close_training_files();
     return 0;
