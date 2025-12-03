@@ -259,6 +259,57 @@ float tester_reseau(float W1[HIDDEN_SIZE][INPUT_SIZE],
     return (correct / 10000.0f) * 100.0f; // pourcentage
 }
 
+//-------------- matrice (28 x 28) --------------------
+
+/* ------------------ Projection des poids de sortie vers l'entrée ------------------
+   Calcule V[j] = sum_h W2[digit][h] * W1[h][j]
+   Puis sauvegarde V en 28x28 dans "poids_digit<digit>.dat"
+   ------------------------------------------------------------------------------- */
+
+void project_input_weights(float W1[HIDDEN_SIZE][INPUT_SIZE],
+                           float W2[OUTPUT_SIZE][HIDDEN_SIZE],
+                           int digit,
+                           float V[INPUT_SIZE]) {
+    /* Initialise V à 0 */
+    for (int j = 0; j < INPUT_SIZE; j++) V[j] = 0.0f;
+
+    /* V_j = sum_h W2[digit][h] * W1[h][j] */
+    for (int h = 0; h < HIDDEN_SIZE; h++) {
+        float coeff = W2[digit][h];
+        for (int j = 0; j < INPUT_SIZE; j++) {
+            V[j] += coeff * W1[h][j];
+        }
+    }
+}
+
+/* Sauvegarde V (taille 784) en matrice 28x28 lisible par gnuplot (matrix) */
+void save_weights_28x28(float V[INPUT_SIZE], int digit) {
+    char filename[64];
+    sprintf(filename, "poids_digit%d.dat", digit);
+    FILE *f = fopen(filename, "w");
+    if (!f) {
+        fprintf(stderr, "Erreur : impossible d'ouvrir %s\n", filename);
+        return;
+    }
+
+    for (int i = 0; i < 28; i++) {
+        for (int j = 0; j < 28; j++) {
+            fprintf(f, "%f ", V[i*28 + j]);
+        }
+        fprintf(f, "\n");
+    }
+    fclose(f);
+}
+
+/* Wrapper pratique : projette puis sauvegarde */
+void project_and_save_input_weights(float W1[HIDDEN_SIZE][INPUT_SIZE],
+                                    float W2[OUTPUT_SIZE][HIDDEN_SIZE],
+                                    int digit) {
+    float V[INPUT_SIZE];
+    project_input_weights(W1, W2, digit, V);
+    save_weights_28x28(V, digit);
+}
+
 
 
 
@@ -275,11 +326,13 @@ int main() {
     // ---- Pour stocker les erreurs ----
     float erreurs[10000];
     int nb_points = 0;
+    long iteration = 0;  // Compte les vraies itérations
+
 
     // ---- Lance Gnuplot ----
     FILE *gp = popen("gnuplot -persistent", "w");
     fprintf(gp, "set title 'Courbe d apprentissage'\n");
-    fprintf(gp, "set xlabel 'Iteration (x1000)'\n");
+    fprintf(gp, "set xlabel 'Iterations'\n");
     fprintf(gp, "set ylabel 'Erreur'\n");
     fprintf(gp, "set grid\n");
     fflush(gp);
@@ -313,6 +366,9 @@ int main() {
     // BOUCLE D'APPRENTISSAGE PRINCIPALE
     while (1) {
 
+        iteration++;  
+
+
         // --- 1) Tirer une image ---
         get_random_training_image(&img, Yd);
 
@@ -342,7 +398,9 @@ int main() {
 
             // Sauvegarde
             erreurs[nb_points] = Err;
-            fprintf(ferr, "%d %.6f\n", nb_points, Err);
+            //fprintf(ferr, "%d %.6f\n", nb_points, Err);
+            fprintf(ferr, "%ld %.6f\n", iteration, Err);
+
             fflush(ferr);
             nb_points++;
 
@@ -368,6 +426,8 @@ int main() {
     pclose(gp);
 
     close_training_files();
+    /* Projection des poids du neurone de sortie 0 et sauvegarde */
+    project_and_save_input_weights(W1, W2, 0);
+
     return 0;
 }
-
